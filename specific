@@ -1,0 +1,96 @@
+import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as plt_font
+
+# 페이지 설정
+st.set_page_config(page_title="효소 동역학 계산기", layout="wide")
+
+st.title("🧬 효모 효소의 기질 특이성 및 분해 속도 계산기")
+st.write("효모 내 특정 효소가 다양한 기질(당류)과 만났을 때의 분해 효율(반응 속도)을 미카엘리스-멘텐 모델을 통해 계산합니다.")
+
+# 가상의 효소-기질 동역학 데이터 (Vmax: 최대 속도, Km: 기질 친화도 반비례 상수)
+# Km이 낮을수록 특이성/친화성이 높음. Vmax가 0이면 반응하지 않음.
+enzyme_data = {
+    "인베르타아제 (Invertase)": {
+        "설탕 (Sucrose)": {"Vmax": 120.0, "Km": 5.0, "desc": "매우 높은 특이성 (주요 기질)"},
+        "엿당 (Maltose)": {"Vmax": 10.0, "Km": 45.0, "desc": "낮은 특이성 (느린 분해)"},
+        "젖당 (Lactose)": {"Vmax": 0.0, "Km": float('inf'), "desc": "반응하지 않음 (기질 특이성 없음)"}
+    },
+    "말타아제 (Maltase)": {
+        "엿당 (Maltose)": {"Vmax": 100.0, "Km": 4.0, "desc": "매우 높은 특이성 (주요 기질)"},
+        "설탕 (Sucrose)": {"Vmax": 5.0, "Km": 60.0, "desc": "낮은 특이성"},
+        "젖당 (Lactose)": {"Vmax": 0.0, "Km": float('inf'), "desc": "반응하지 않음"}
+    }
+}
+
+# 사이드바 입력 UI
+st.sidebar.header("설정 패널")
+selected_enzyme = st.sidebar.selectbox("효소 선택", list(enzyme_data.keys()))
+selected_substrate = st.sidebar.selectbox("기질 (당류) 선택", list(enzyme_data[selected_enzyme].keys()))
+substrate_concentration = st.sidebar.slider("현재 기질 농도 [S] (mM)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+
+# 선택된 파라미터 가져오기
+params = enzyme_data[selected_enzyme][selected_substrate]
+Vmax = params["Vmax"]
+Km = params["Km"]
+desc = params["desc"]
+
+# 반응 속도(v) 계산 함수
+def calculate_velocity(Vmax, Km, S):
+    if Km == float('inf') or Vmax == 0:
+        return 0.0
+    return (Vmax * S) / (Km + S)
+
+current_velocity = calculate_velocity(Vmax, Km, substrate_concentration)
+
+# 결과 화면 분할
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📊 계산 결과")
+    st.info(f"**효소-기질 특성:** {desc}")
+    
+    st.metric(label="최대 반응 속도 (Vmax)", value=f"{Vmax} 단위")
+    st.metric(label="미카엘리스 상수 (Km)", value=f"{Km if Km != float('inf') else '무한대'} mM")
+    st.metric(label="현재 농도에서의 분해 속도 (v)", value=f"{current_velocity:.2f} 단위/초")
+
+    if current_velocity == 0:
+        st.error("기질 특이성이 맞지 않아 효소가 이 기질을 분해하지 못합니다.")
+    elif current_velocity > (Vmax * 0.8):
+        st.success("매우 활발하게 분해되고 있습니다. (최대 속도에 근접)")
+    else:
+        st.warning("분해가 진행 중이나, 기질 농도를 높이면 속도가 더 증가할 수 있습니다.")
+
+with col2:
+    st.subheader("📈 미카엘리스-멘텐 그래프")
+    
+    # 그래프를 위한 데이터 생성 (0부터 100까지의 기질 농도)
+    S_range = np.linspace(0, 100, 200)
+    if Vmax == 0:
+        v_range = np.zeros_like(S_range)
+    else:
+        v_range = (Vmax * S_range) / (Km + S_range)
+    
+    # 그래프 그리기
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(S_range, v_range, color='blue', label='Reaction Velocity Curve')
+    
+    # 현재 농도 점 표시
+    ax.scatter([substrate_concentration], [current_velocity], color='red', zorder=5)
+    ax.annotate(f'Current [S]={substrate_concentration}', 
+                xy=(substrate_concentration, current_velocity), 
+                xytext=(substrate_concentration + 5, current_velocity - 10),
+                arrowprops=dict(facecolor='black', arrowstyle='->'))
+    
+    # 점근선 (Vmax) 표시
+    if Vmax > 0:
+        ax.axhline(y=Vmax, color='green', linestyle='--', label=f'Vmax ({Vmax})')
+    
+    ax.set_title(f"{selected_enzyme} - {selected_substrate} Kinetics")
+    ax.set_xlabel("Substrate Concentration [S] (mM)")
+    ax.set_ylabel("Reaction Velocity (v)")
+    ax.legend()
+    ax.grid(True, linestyle=':', alpha=0.6)
+    
+    st.pyplot(fig)
